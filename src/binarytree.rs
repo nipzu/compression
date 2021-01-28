@@ -1,5 +1,8 @@
+use crate::savebits::SaveBits;
+
 pub struct BinaryTree<T: Clone> {
     nodes: Vec<BTreeNode<T>>,
+    root_node: usize,
 }
 
 #[derive(Clone)]
@@ -15,13 +18,14 @@ impl<T: Clone> BinaryTree<T> {
     pub fn new(root_value: T) -> BinaryTree<T> {
         BinaryTree {
             nodes: vec![BTreeNode::Leaf { value: root_value }],
+            root_node: 0,
         }
     }
 
     /// Returns a immutable reference to the root node.
     fn root_node(&self) -> &BTreeNode<T> {
         assert!(!self.nodes.is_empty());
-        &self.nodes[0]
+        &self.nodes[self.root_node]
     }
 
     /// Maps the values in leaf nodes using the provided function.
@@ -35,6 +39,7 @@ impl<T: Clone> BinaryTree<T> {
                     BTreeNode::Leaf { value } => BTreeNode::Leaf { value: f(value) },
                 })
                 .collect(),
+            root_node: self.root_node,
         }
     }
 
@@ -111,6 +116,56 @@ impl<T: Clone> BinaryTree<T> {
     }
 }
 
+impl<T: Clone + SaveBits> SaveBits for BinaryTree<T> {
+    fn save_bits(&self) -> Box<dyn Iterator<Item = bool>> {
+        self.save_from_node(self.root_node())
+    }
+
+    fn from_bits(iter: &mut dyn Iterator<Item = bool>) -> Self {
+        let mut s = BinaryTree {
+            nodes: Vec::new(),
+            root_node: 0,
+        };
+
+        let root_node = s.load_node(iter);
+
+        s.root_node = root_node;
+
+        s
+    }
+}
+
+impl<T: Clone + SaveBits> BinaryTree<T> {
+    fn save_from_node(&self, node: &BTreeNode<T>) -> Box<dyn Iterator<Item = bool>> {
+        match node {
+            BTreeNode::Branch { left, right } => Box::new(
+                std::iter::once(false)
+                    .chain(self.save_from_node(&self.nodes[*left]))
+                    .chain(self.save_from_node(&self.nodes[*right])),
+            ),
+            BTreeNode::Leaf { value } => Box::new(std::iter::once(true).chain(value.save_bits())),
+        }
+    }
+
+    /// WARNING: should probably only be called from BinaryTree::from_bits
+    fn load_node(&mut self, iter: &mut dyn Iterator<Item = bool>) -> usize {
+        match iter.next() {
+            Some(true) => {
+                self.nodes.push(BTreeNode::Leaf {
+                    value: T::from_bits(iter),
+                });
+            }
+            Some(false) => {
+                let left = self.load_node(iter);
+                let right = self.load_node(iter);
+                self.nodes.push(BTreeNode::Branch { left, right });
+            }
+            None => panic!("Iterator returned None while loading binary tree"),
+        }
+        self.nodes.len() - 1
+    }
+}
+
 /// Iterator over a binary tree. Iterates over the leaf node from left to right.
 pub struct BTreeLeafIter<'a, T: Clone> {
     nodes: &'a [BTreeNode<T>],
@@ -183,6 +238,7 @@ mod tests {
                 BTreeNode::Leaf { value: 2 },
                 BTreeNode::Leaf { value: 3 },
             ],
+            root_node: 0,
         }
     }
 
@@ -212,9 +268,12 @@ mod tests {
         tree.add_leaf(2, &mut it);
         tree.add_leaf(5, &mut it);
 
+        let mut n_leaves = 0;
         for (x1, x2) in tree.leaves().zip(get_test_tree().leaves()) {
             assert_eq!(x1, x2);
+            n_leaves += 1;
         }
+        assert_eq!(n_leaves, 5);
     }
 
     #[test]
@@ -249,5 +308,20 @@ mod tests {
         let mut it3 = [false, true].iter().copied();
         assert_eq!(tree.get_leaf(&mut it3), None);
         assert_eq!(it3.next(), None);
+    }
+
+    #[test]
+    fn test_save_load_tree() {
+        let tree = get_test_tree();
+
+        let mut n_leaves = 0;
+        for (x1, x2) in tree
+            .leaves()
+            .zip(BinaryTree::<u8>::from_bits(&mut tree.save_bits()).leaves())
+        {
+            assert_eq!(x1, x2);
+            n_leaves += 1;
+        }
+        assert_eq!(n_leaves, 5);
     }
 }

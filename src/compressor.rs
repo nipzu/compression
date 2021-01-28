@@ -1,6 +1,7 @@
-use bitvec::{vec::BitVec, order::Lsb0};
+use bitvec::{order::Lsb0, vec::BitVec};
 
 use crate::binarytree::BinaryTree;
+use crate::savebits::SaveBits;
 use std::collections::HashMap;
 
 pub fn compress(data: &[u8]) -> Vec<u8> {
@@ -15,26 +16,18 @@ pub fn compress(data: &[u8]) -> Vec<u8> {
     }
 
     let mut compressed: BitVec<Lsb0, u8> = BitVec::new();
+    compressed.extend(
+        data.iter()
+            .map(|byte| map.get(byte).unwrap().iter())
+            .flatten(),
+    );
 
-    compressed.extend(data.iter().map(|byte| map.get(byte).unwrap().iter()).flatten());
-    
-    // compressed.into_vec()
-    let res = compressed.into_vec();
+    let mut compression_output: BitVec<Lsb0, u8> = BitVec::new();
+    compression_output.extend(tree.map_values(&|(_, byte)| byte).save_bits());
+    compression_output.extend(compressed.len().save_bits());
+    compression_output.extend_from_bitslice(compressed.as_bitslice());
 
-    let x = crate::decompressor::apply_tree(res.clone(), &tree.map_values(&|(_, byte)| byte));
-
-    for byte in x {
-        print!("{}", byte as char);
-    }
-    println!();
-
-    println!();
-
-    println!("{} => {} = {:.2} %", data.len(), res.len(), res.len() as f64 / data.len() as f64 * 100.0 );
-
-    println!();
-
-    res
+    compression_output.into_vec()
 }
 
 fn count_uses(data: &[u8]) -> Vec<(usize, u8)> {
@@ -55,7 +48,7 @@ fn count_uses(data: &[u8]) -> Vec<(usize, u8)> {
 // TODO actually invent some good algorithm
 fn build_tree(uses: &mut impl Iterator<Item = (usize, u8)>) -> BinaryTree<(usize, u8)> {
     let mut tree = BinaryTree::new(uses.next().unwrap());
-    while let Some((next_count, next_byte)) = uses.next() {
+    for (next_count, next_byte) in uses {
         let route = tree
             .leaves()
             .map(|((count, _), r)| (count + r.len() * next_count, r))
