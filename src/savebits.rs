@@ -16,7 +16,7 @@ impl SaveBits for u8 {
                 .next()
                 .expect("Iterator returned None while loading u8");
             if is_bit_set {
-                s += 2u8.pow(x);
+                s |= 1 << x;
             }
         }
         s
@@ -27,17 +27,9 @@ impl SaveBits for usize {
     fn save_bits(&self) -> Box<dyn Iterator<Item = bool>> {
         assert!(*self > 0);
         let num_bits = std::mem::size_of::<usize>() as u32 * 8 - self.leading_zeros();
-        // panic!("{}", num_bits);
         let s = *self;
         Box::new((0..2 * num_bits - 1).map(move |x| {
-            // FIXME better ways to do this?
-            if x < num_bits - 1 {
-                false
-            } else if x == num_bits - 1 {
-                true
-            } else {
-                2usize.pow(2 * num_bits - x - 2) & s > 0
-            }
+            x == num_bits - 1 || (x >= num_bits && (1 << (2 * num_bits - x - 2)) & s != 0)
         }))
     }
 
@@ -50,13 +42,13 @@ impl SaveBits for usize {
                 .next()
                 .expect("Iterator returned None while loading usize");
         }
-        let mut s = 2usize.pow(num_bits - 1);
+        let mut s = 1 << (num_bits - 1);
         for x in (0..num_bits - 1).rev() {
             if iter
                 .next()
                 .expect("Iterator returned None while loading usize")
             {
-                s += 2usize.pow(x);
+                s |= 1 << x;
             }
         }
 
