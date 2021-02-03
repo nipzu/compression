@@ -13,35 +13,81 @@ use crate::error::ProgramError;
 
 fn main() {
     if let Err(e) = run_program() {
-        println!("ERROR: {}", e);
+        eprintln!("ERROR: {}", e);
     }
 }
 
 fn run_program() -> Result<(), ProgramError> {
     let args = parse_arguments()?;
-    let input = std::fs::read(args.input_file.clone()).map_err(|e| ProgramError::FileReadError(e, args.input_file.clone()))?;
+
+    let timer = if args.is_timed {
+        Some(std::time::Instant::now())
+    } else {
+        None
+    };
+
+    let input = std::fs::read(args.input_file.clone())
+        .map_err(|e| ProgramError::FileReadError(e, args.input_file.clone()))?;
+    let input_len = input.len();
+    if args.is_verbose {
+        println!(
+            "Succesfully read {} bytes from file {}",
+            input_len,
+            args.input_file.to_string_lossy()
+        );
+    }
 
     match args.program_type {
         ProgramType::Compress => {
             let compressed = compress(&input);
-            let len1 = input.len();
-            let len2 = compressed.len();
+            let compressed_len = compressed.len();
+
             println!(
-                "{} bytes => {} bytes, {:.2} % compression ratio",
-                len1,
-                len2,
-                len2 as f64 / len1 as f64 * 100.0
+                "Compressed {} bytes to {} bytes with a {:.2} % compression ratio",
+                input_len,
+                compressed_len,
+                compressed_len as f64 / input_len as f64 * 100.0
             );
 
             std::fs::write(args.output_file.clone(), compressed)
-                .map_err(|e| ProgramError::FileWriteError(e, args.output_file.clone()))
+                .map_err(|e| ProgramError::FileWriteError(e, args.output_file.clone()))?;
+            if args.is_verbose {
+                println!(
+                    "Succesfully wrote {} bytes to file {}",
+                    compressed_len,
+                    args.output_file.to_string_lossy()
+                );
+            }
         }
         ProgramType::Decompress => {
             let decompressed = decompress(input);
+            let decompressed_len = decompressed.len();
+
+            println!(
+                "Decompressed {} bytes to {} bytes. The file had a {:.2} % compression ratio",
+                input_len,
+                decompressed_len,
+                input_len as f64 / decompressed_len as f64 * 100.0
+            );
+
             std::fs::write(args.output_file.clone(), decompressed)
-                .map_err(|e| ProgramError::FileWriteError(e, args.output_file.clone()))
+                .map_err(|e| ProgramError::FileWriteError(e, args.output_file.clone()))?;
+
+            if args.is_verbose {
+                println!(
+                    "Succesfully wrote {} bytes to file {}",
+                    decompressed_len,
+                    args.output_file.to_string_lossy()
+                );
+            }
         }
     }
+
+    if let Some(start) = timer {
+        println!("Done in {} ms", start.elapsed().as_millis());
+    }
+
+    Ok(())
 }
 
 enum ProgramType {
@@ -53,6 +99,8 @@ struct ProgramArgs {
     program_type: ProgramType,
     input_file: PathBuf,
     output_file: PathBuf,
+    is_verbose: bool,
+    is_timed: bool,
 }
 
 fn parse_arguments() -> Result<ProgramArgs, ProgramError> {
@@ -71,10 +119,24 @@ fn parse_arguments() -> Result<ProgramArgs, ProgramError> {
         Some(file_path) => PathBuf::from(file_path),
         None => return Err(ProgramError::InvalidArgumentsError),
     };
+    let mut is_verbose = false;
+    let mut is_timed = false;
+    while let Some(arg) = args.next().as_deref() {
+        match arg {
+            "-v" => is_verbose = true,
+            "-t" => is_timed = true,
+            _ => eprintln!(
+                "WARNING: Argumement {} was not recognized and was ignored",
+                arg
+            ),
+        }
+    }
     Ok(ProgramArgs {
         program_type,
         input_file,
         output_file,
+        is_verbose,
+        is_timed,
     })
 }
 

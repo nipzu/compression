@@ -25,7 +25,6 @@ pub fn compress(data: &[u8]) -> Vec<u8> {
     let mut compression_output: BitVec<Lsb0, u8> = BitVec::new();
     compression_output.extend(std::iter::repeat(false).take(3));
     compression_output.extend(tree.map_values(&|(_, byte)| byte).save_bits());
-    // compression_output.extend(compressed.len().save_bits());
     compression_output.extend_from_bitslice(compressed.as_bitslice());
 
     let padding = 8 * compression_output.elements() - compression_output.len();
