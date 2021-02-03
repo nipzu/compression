@@ -53,7 +53,7 @@ impl<T: Clone> BinaryTree<T> {
         new_value: T,
         iter: &mut impl Iterator<Item = bool>,
     ) -> Option<usize> {
-        let mut cur_node = 0;
+        let mut cur_node = self.root_node;
         let mut depth = 0;
         while let BTreeNode::Branch { left, right } = self.nodes[cur_node] {
             match iter.next() {
@@ -102,6 +102,7 @@ impl<T: Clone> BinaryTree<T> {
         }
         unreachable!();
     }
+
     /// Returns an iterator iterating over the tree from left to right. Note that
     /// only leaf nodes are returned.
     pub fn leaves(&self) -> BTreeLeafIter<T> {
